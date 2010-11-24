@@ -20,7 +20,7 @@ local currentArtifact = {
 --Set on login/load (PLAYER_LOGIN)
 local archaeologyRaces = {}
 
-local events = {
+unearthedEvents = {
 	--["ARCHAEOLOGY_CLOSED"],
     --["ARCHAEOLOGY_TOGGLE"],
 	["ADDON_LOADED"] = "",
@@ -31,12 +31,13 @@ local events = {
 	--["CURRENCY_DISPLAY_UPDATE"] = "",
 	["CHAT_MSG_LOOT"] = "",
 	--["CHAT_MSG_SKILL"]
-	["PLAYER_LOGIN"] = "",
+	["PLAYER_ALIVE"] = "",
+
 }
 
 local UnearthedEventFrame = CreateFrame("Frame", "UnearthedEventFrame", UIParent)
 
-for event, handler in pairs(events) do
+for event, handler in pairs(unearthedEvents) do
 	UnearthedEventFrame:RegisterEvent(event)
 end
 
@@ -49,17 +50,8 @@ local function calcFreeSpace(self)
 	end
 end
 
---SolveArtifact() seems to be protected.  We can try adding a button for this later.
-local function autoSolve(self) 
-	--TODO: swap this to a bag space event handler
-	calcFreeSpace()
-	if CanSolveArtifact() == 1 and freeBagSpace > 0 then
-		print ("Solving",currentArtifact["race"],"artifact.")
-		SolveArtifact()
-	end
-end
 
-function events:ADDON_LOADED(...)
+function unearthedEvents:ADDON_LOADED(...)
 	addonName = ...
 	if addonName == ADDONNAME then
 		VERSION = GetAddOnMetadata("Unearthed", "Version")
@@ -67,15 +59,18 @@ function events:ADDON_LOADED(...)
 	end
 end
 
-function events:PLAYER_LOGIN(...)
-	local numRaces = GetNumArchaeologyRaces();
-	for i=1,numRaces do
-		local name, currency, texture, itemID = GetArchaeologyRaceInfo(i)
-		archaeologyRaces[name] = i
+
+function unearthedEvents:PLAYER_ALIVE(...)
+	if  # archaeologyRaces == 0 then
+		local numRaces = GetNumArchaeologyRaces()
+		for i=1,numRaces do
+			local name, currency, texture, itemID = GetArchaeologyRaceInfo(i)
+			archaeologyRaces[name] = i
+		end
 	end	
 end
 
-function events:CHAT_MSG_LOOT(...)
+function unearthedEvents:CHAT_MSG_LOOT(...)
 	lootMsg = ...
 	--Exit handler if this isn't an Archaeology loot message
 	if string.find(lootMsg,PROFESSIONS_ARCHAEOLOGY) == nil then
@@ -83,8 +78,8 @@ function events:CHAT_MSG_LOOT(...)
 	end
 	
 	--print ("Event handler: CHAT_MSG_LOOT")
-	currentArtifact["race"], currentArtifact["lootedFragments"]= string.match(lootMsg, ": (%a+) .* x(%d+)")
-	--print ("Captures:", currentArtifact["race"], ",", currentArtifact["lootedFragments"])
+	currentArtifact["race"], currentArtifact["lootedFragments"]= string.match(lootMsg, ": (.-) Archaeology Fragment x(%d+)")
+	--print ("Captures:", currentArtifact["race"]..",", currentArtifact["lootedFragments"])
 	
 	SetSelectedArtifact(archaeologyRaces[currentArtifact["race"]])
 	currentArtifact["currentFragments"], currentArtifact["adjustment"], currentArtifact["requiredFragments"] = GetArtifactProgress()
@@ -100,13 +95,13 @@ function events:CHAT_MSG_LOOT(...)
 	end
 end
 
-function events:ARTIFACT_DIG_SITE_UPDATED(...)
+function unearthedEvents:ARTIFACT_DIG_SITE_UPDATED(...)
 	print ("Dig site exhausted.")
 end
 
 function UnearthedEventFrame_OnEvent(self, event, ...)
 	--print ("Entered OnEvent")
-	local handler = events[event]
+	local handler = unearthedEvents[event]
 	if handler ~= "" then
 		--print ("Event handler:", event, ...)
 		handler(self,...)
