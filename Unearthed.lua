@@ -32,7 +32,6 @@ unearthedEvents = {
 	["CHAT_MSG_LOOT"] = "",
 	--["CHAT_MSG_SKILL"]
 	["PLAYER_ALIVE"] = "",
-
 }
 
 local UnearthedEventFrame = CreateFrame("Frame", "UnearthedEventFrame", UIParent)
@@ -50,6 +49,10 @@ local function calcFreeSpace(self)
 	end
 end
 
+local function alert(message)
+	RaidNotice_AddMessage( RaidBossEmoteFrame, message, ChatTypeInfo["RAID_BOSS_EMOTE"] );
+	PlaySound("RaidBossEmoteWarning");
+end
 
 function unearthedEvents:ADDON_LOADED(...)
 	addonName = ...
@@ -59,14 +62,16 @@ function unearthedEvents:ADDON_LOADED(...)
 	end
 end
 
-
 function unearthedEvents:PLAYER_ALIVE(...)
 	if  # archaeologyRaces == 0 then
 		local numRaces = GetNumArchaeologyRaces()
 		for i=1,numRaces do
 			local name, currency, texture, itemID = GetArchaeologyRaceInfo(i)
-			archaeologyRaces[name] = i
+			archaeologyRaces[name] = {}
+			archaeologyRaces[name][0] = i
+			archaeologyRaces[name][1] = true
 		end
+		UnearthedEventFrame:UnregisterEvent("PLAYER_ALIVE")
 	end	
 end
 
@@ -80,23 +85,20 @@ function unearthedEvents:CHAT_MSG_LOOT(...)
 	--print ("Event handler: CHAT_MSG_LOOT")
 	currentArtifact["race"], currentArtifact["lootedFragments"]= string.match(lootMsg, ": (.-) Archaeology Fragment x(%d+)")
 	--print ("Captures:", currentArtifact["race"]..",", currentArtifact["lootedFragments"])
-	
-	SetSelectedArtifact(archaeologyRaces[currentArtifact["race"]])
+	SetSelectedArtifact(archaeologyRaces[currentArtifact["race"]][0])
 	currentArtifact["currentFragments"], currentArtifact["adjustment"], currentArtifact["requiredFragments"] = GetArtifactProgress()
 	
-	if CanSolveArtifact() == 1 then
+	if CanSolveArtifact() == 1 and archaeologyRaces[currentArtifact["race"]][1] then
 		message = strconcat("You can now solve the ",currentArtifact["race"]," artifact!")
-		RaidNotice_AddMessage( RaidBossEmoteFrame, message, ChatTypeInfo["RAID_BOSS_EMOTE"] );
-		PlaySound("RaidBossEmoteWarning");
-
-		--print (message)
+		archaeologyRaces[currentArtifact["race"]][1] = false
+		alert(message)
 	else
 		print (currentArtifact["race"],"artifact progress:",currentArtifact["currentFragments"].."/"..currentArtifact["requiredFragments"])
 	end
 end
 
 function unearthedEvents:ARTIFACT_DIG_SITE_UPDATED(...)
-	print ("Dig site exhausted.")
+	alert("Dig site exhausted")
 end
 
 function UnearthedEventFrame_OnEvent(self, event, ...)
