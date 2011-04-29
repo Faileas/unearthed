@@ -1,7 +1,7 @@
-## Interface: 40000
+## Interface: 40100
 ## Title: Unearthed
 ## Notes: Archaeology helper
-## Author: Syrae
+## Author: Syrae and GovtGeek
 ## SavedVariablesPerCharacter: UnearthedSettings
 ## Version: 0.1a
 ## DefaultState: Enabled
