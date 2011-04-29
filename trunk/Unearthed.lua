@@ -1,13 +1,12 @@
 ﻿--[[--
 Written by Syrae
-
+Modified by Drago
 Special thanks to the folks in #wowuidev
 --]]--
 
 -- This will be set once when the addon is first loaded (ADDON_LOADED) and then never set after that.
 local VERSION = nil
 local ADDONNAME = "Unearthed"
-local freeBagSpace = 0
 
 local currentArtifact = {
 	["race"] = "",
@@ -21,32 +20,16 @@ local currentArtifact = {
 local archaeologyRaces = {}
 
 unearthedEvents = {
-	--["ARCHAEOLOGY_CLOSED"],
-    --["ARCHAEOLOGY_TOGGLE"],
-	["ADDON_LOADED"] = "",
-    --["ARTIFACT_COMPLETE"] = "",
+    ["ADDON_LOADED"] = "",
     ["ARTIFACT_DIG_SITE_UPDATED"] = "",
-    --["ARTIFACT_HISTORY_READY"],
-    --["ARTIFACT_UPDATE"] = "",
-	--["CURRENCY_DISPLAY_UPDATE"] = "",
-	["CHAT_MSG_LOOT"] = "",
-	--["CHAT_MSG_SKILL"]
-	["PLAYER_ALIVE"] = "",
+    ["CHAT_MSG_CURRENCY"] = "",
+    ["PLAYER_ALIVE"] = "",
 }
 
 local UnearthedEventFrame = CreateFrame("Frame", "UnearthedEventFrame", UIParent)
 
 for event, handler in pairs(unearthedEvents) do
 	UnearthedEventFrame:RegisterEvent(event)
-end
-
-local function calcFreeSpace(self)
-	--Figure out current free bag space
-	freeBagSpace = 0
-	for i=0,4 do
-		free, _ = GetContainerNumFreeSlots(i)
-		freeBagSpace = freeBagSpace + free
-	end
 end
 
 local function alert(message)
@@ -59,32 +42,35 @@ function unearthedEvents:ADDON_LOADED(...)
 	if addonName == ADDONNAME then
 		VERSION = GetAddOnMetadata("Unearthed", "Version")
 		print ("Unearthed", VERSION, "loaded")
+		updateArchaeologyRaces()
 	end
 end
 
 function unearthedEvents:PLAYER_ALIVE(...)
 	if  # archaeologyRaces == 0 then
-		local numRaces = GetNumArchaeologyRaces()
-		for i=1,numRaces do
-			local name, currency, texture, itemID = GetArchaeologyRaceInfo(i)
-			archaeologyRaces[name] = {}
-			archaeologyRaces[name][0] = i
-			archaeologyRaces[name][1] = true
-		end
+	    updateArchaeologyRaces()
 		UnearthedEventFrame:UnregisterEvent("PLAYER_ALIVE")
 	end	
 end
 
-function unearthedEvents:CHAT_MSG_LOOT(...)
-	lootMsg = ...
+function updateArchaeologyRaces()
+		local numRaces = GetNumArchaeologyRaces()
+		for i=1,numRaces do
+			local name, texture, itemID, currency = GetArchaeologyRaceInfo(i)
+			archaeologyRaces[name] = {}
+			archaeologyRaces[name][0] = i
+			if archaeologyRaces[name][1] == nil then archaeologyRaces[name][1] = true end
+		end
+end
+
+function unearthedEvents:CHAT_MSG_CURRENCY(...)
+	local lootMsg = ...
 	--Exit handler if this isn't an Archaeology loot message
-	if string.find(lootMsg,PROFESSIONS_ARCHAEOLOGY) == nil then
-		return
-	end
-	
-	--print ("Event handler: CHAT_MSG_LOOT")
-	currentArtifact["race"], currentArtifact["lootedFragments"]= string.match(lootMsg, ": (.-) Archaeology Fragment x(%d+)")
-	--print ("Captures:", currentArtifact["race"]..",", currentArtifact["lootedFragments"])
+	if string.find(lootMsg,PROFESSIONS_ARCHAEOLOGY) == nil then return end
+	currentArtifact["race"], currentArtifact["lootedFragments"] = string.match(lootMsg, ": (.-) Archaeology Fragment x(%d+).*")
+	if currentArtifact["race"] == nil then return end -- For when we get the tablets/scrolls/etc
+	local name, texture, itemID, currentTotal = GetArchaeologyRaceInfo(archaeologyRaces[currentArtifact["race"]][0])
+	if (currentTotal/200) > .90 then alert("You have "..currentTotal.." of 200 maximum "..name.." fragments") end
 	SetSelectedArtifact(archaeologyRaces[currentArtifact["race"]][0])
 	currentArtifact["currentFragments"], currentArtifact["adjustment"], currentArtifact["requiredFragments"] = GetArtifactProgress()
 	
@@ -93,7 +79,6 @@ function unearthedEvents:CHAT_MSG_LOOT(...)
 		archaeologyRaces[currentArtifact["race"]][1] = false
 		alert(message)
 	else
-		print (currentArtifact["race"],"artifact progress:",currentArtifact["currentFragments"].."/"..currentArtifact["requiredFragments"])
 	end
 end
 
