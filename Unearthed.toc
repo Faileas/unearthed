@@ -1,9 +1,9 @@
-## Interface: 40100
+## Interface: 40200
 ## Title: Unearthed
 ## Notes: Archaeology helper
 ## Author: Syrae and GovtGeek
 ## SavedVariablesPerCharacter: UnearthedSettings
-## Version: 0.2
+## Version: 0.2.1
 ## DefaultState: Enabled
 ## LoadOnDemand: 0
 ## X-eMail: syrae +dot+ dev -at- gmail |dot| com
