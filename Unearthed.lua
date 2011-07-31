@@ -14,7 +14,7 @@ unearthedEvents = {
     ["ARTIFACT_DIG_SITE_UPDATED"] = "",
     ["CHAT_MSG_CURRENCY"] = "",
     ["PLAYER_ALIVE"] = "",
-    --["BAG_UPDATE"] = "",  -- Added after the player is loaded in PLAYER_ALIVE
+    ["BAG_UPDATE"] = "",  -- Registered after the player is loaded in PLAYER_ALIVE
 }
 
 --KeystoneItemID = RaceName
@@ -68,12 +68,12 @@ end
 function unearthedEvents:PLAYER_ALIVE(...)
 	if  # archaeologyRaces == 0 then
 	    updateArchaeologyRaces()
-		UnearthedEventFrame:UnregisterEvent("PLAYER_ALIVE")
         --Registering this after we load to prevent a lot of initial calls to this.
-        unearthedEvents["BAG_UPDATE"] = ""
         UnearthedEventFrame:RegisterEvent("BAG_UPDATE")
         --Then we force call this funtion once to do our initial load.
         updateSocketInfo()
+        --I think this needs to be at the end of the function or we stop executing early?
+		UnearthedEventFrame:UnregisterEvent("PLAYER_ALIVE")
 	end	
 end
 
@@ -99,6 +99,7 @@ end
 
 function solveAlert()
     if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: solveAlert()") end
+
     if CanSolveArtifact() == 1 and archaeologyRaces[currentArtifact["race"]][1] then
 		message = strconcat("You can now solve the ",currentArtifact["race"]," artifact!")
 		archaeologyRaces[currentArtifact["race"]][1] = false
@@ -151,7 +152,11 @@ end
 function unearthedEvents:BAG_UPDATE(...)
     if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: BAG_UPDATE") end
     updateSocketInfo()
-    solveAlert()
+    --Make sure we've actually got an artifact to check for before we start alerting
+    --We will only alert if we are doing Archaeology in the field and only for the current race
+    if currentArtifact["race"] ~= nil then
+        solveAlert()
+    end
 end
 
 function unearthedEvents:ARTIFACT_DIG_SITE_UPDATED(...)
@@ -165,7 +170,7 @@ function UnearthedEventFrame_OnEvent(self, event, ...)
 		--print ("Event handler:", event, ...)
 		handler(self,...)
 	else
-		print ("Event handler:", event, ...)
+		print ("Unhandled event:", event, ...)
 	end
 end
 
