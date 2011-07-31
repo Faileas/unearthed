@@ -7,6 +7,7 @@ Special thanks to the folks in #wowuidev
 -- This will be set once when the addon is first loaded (ADDON_LOADED) and then never set after that.
 local VERSION = nil
 local ADDONNAME = "Unearthed"
+UNEARTHED_DEBUG = false
 
 local currentArtifact = {
 	["race"] = "",
@@ -64,21 +65,30 @@ function updateArchaeologyRaces()
 end
 
 function unearthedEvents:CHAT_MSG_CURRENCY(...)
-	local lootMsg = ...
-	--Exit handler if this isn't an Archaeology loot message
+	if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: CHAT_MSG_CURRENCY") end
+    local lootMsg = ...
+    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: '"..lootMsg.."'") end
+	
+    --Exit handler if this isn't an Archaeology loot message
 	if string.find(lootMsg,PROFESSIONS_ARCHAEOLOGY) == nil then return end
-	currentArtifact["race"], currentArtifact["lootedFragments"] = string.match(lootMsg, ": (.-) Archaeology Fragment x(%d+).*")
-	if currentArtifact["race"] == nil then return end -- For when we get the tablets/scrolls/etc
+    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: Archaeology loot message found.") end
+    
+	currentArtifact["race"], currentArtifact["lootedFragments"] = string.match(lootMsg, "h%[(.-) Archaeology Fragment.*x(%d+).*")
+    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: Found "..currentArtifact["race"].." x"..currentArtifact["lootedFragments"]) end
+    
+    if currentArtifact["race"] == nil then return end -- For when we get the tablets/scrolls/etc
 	local name, texture, itemID, currentTotal = GetArchaeologyRaceInfo(archaeologyRaces[currentArtifact["race"]][0])
-	if (currentTotal/200) > .90 then alert("You have "..currentTotal.." of 200 maximum "..name.." fragments") end
+    
+    if (currentTotal/200) > .90 then alert("You have "..currentTotal.." of 200 maximum "..name.." fragments") end
 	SetSelectedArtifact(archaeologyRaces[currentArtifact["race"]][0])
 	currentArtifact["currentFragments"], currentArtifact["adjustment"], currentArtifact["requiredFragments"] = GetArtifactProgress()
-	
-	if CanSolveArtifact() == 1 and archaeologyRaces[currentArtifact["race"]][1] then
+	if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: You now have "..currentTotal.."/"..currentArtifact["requiredFragments"].." "..name.." fragments.") end
+    if CanSolveArtifact() == 1 and archaeologyRaces[currentArtifact["race"]][1] then
 		message = strconcat("You can now solve the ",currentArtifact["race"]," artifact!")
 		archaeologyRaces[currentArtifact["race"]][1] = false
 		alert(message)
-	else
+	elseif CanSolveArtifact() ~= 1 then
+        archaeologyRaces[currentArtifact["race"]][1] = true
 	end
 end
 
