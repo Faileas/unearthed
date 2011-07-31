@@ -9,23 +9,40 @@ local VERSION = nil
 local ADDONNAME = "Unearthed"
 UNEARTHED_DEBUG = false
 
-local currentArtifact = {
-	["race"] = "",
-	["lootedFragments"] = "",
-	["currentFragments"] = "",
-	["adjustment"] = "",
-	["requiredFragments"] = "",
-}
-
---Set on login/load (PLAYER_LOGIN)
-local archaeologyRaces = {}
-
 unearthedEvents = {
     ["ADDON_LOADED"] = "",
     ["ARTIFACT_DIG_SITE_UPDATED"] = "",
     ["CHAT_MSG_CURRENCY"] = "",
     ["PLAYER_ALIVE"] = "",
+    --["BAG_UPDATE"] = "",  -- Added after the player is loaded in PLAYER_ALIVE
 }
+
+--KeystoneItemID = RaceName
+local KEYSTONE_VALUE = 12
+keystones = {
+    ["Dwarf"] = 52843,
+    ["Draenei"] = 64394,
+    ["Night Elf"] = 63127,
+    ["Nerubian"] = 64396,
+    ["Orc"] = 64392,
+    ["Tol'vir"] = 64397,
+    ["Troll"] = 63128,
+    ["Vrykul"] = 64395,
+}
+
+--Set in updateCurrentArtifactInfo
+currentArtifact = {
+	["race"] = "",
+    ["name"] = "", --unused
+	["lootedFragments"] = "",
+	["currentFragments"] = "",
+    ["numSockets"] = "",
+	["requiredFragments"] = "",
+}
+
+--Set on login/load (PLAYER_LOGIN)
+-- RaceName = {RaceID, ShowCompletionAlert, NumKeystonesInInventory}
+archaeologyRaces = {}
 
 local UnearthedEventFrame = CreateFrame("Frame", "UnearthedEventFrame", UIParent)
 
@@ -44,6 +61,7 @@ function unearthedEvents:ADDON_LOADED(...)
 		VERSION = GetAddOnMetadata("Unearthed", "Version")
 		print ("Unearthed", VERSION, "loaded")
 		updateArchaeologyRaces()
+        updateSocketInfo()
 	end
 end
 
@@ -51,17 +69,60 @@ function unearthedEvents:PLAYER_ALIVE(...)
 	if  # archaeologyRaces == 0 then
 	    updateArchaeologyRaces()
 		UnearthedEventFrame:UnregisterEvent("PLAYER_ALIVE")
+        --Registering this after we load to prevent a lot of initial calls to this.
+        unearthedEvents["BAG_UPDATE"] = ""
+        UnearthedEventFrame:RegisterEvent("BAG_UPDATE")
+        --Then we force call this funtion once to do our initial load.
+        updateSocketInfo()
 	end	
 end
 
 function updateArchaeologyRaces()
-		local numRaces = GetNumArchaeologyRaces()
-		for i=1,numRaces do
-			local name, texture, itemID, currency = GetArchaeologyRaceInfo(i)
-			archaeologyRaces[name] = {}
-			archaeologyRaces[name][0] = i
-			if archaeologyRaces[name][1] == nil then archaeologyRaces[name][1] = true end
-		end
+    local numRaces = GetNumArchaeologyRaces()
+    for i=1,numRaces do
+        local name, texture, itemID, currency = GetArchaeologyRaceInfo(i)
+        archaeologyRaces[name] = {}
+        archaeologyRaces[name][0] = i
+        if archaeologyRaces[name][1] == nil then archaeologyRaces[name][1] = true end
+        archaeologyRaces[name][2] = 0 --Default for categories (like Fossils) which never have keystones
+    end
+end
+
+function updateCurrentArtifactInfo(race)
+    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: updateCurrentArtifactInfo()") end
+    SetSelectedArtifact(archaeologyRaces[race][0])
+    currentArtifact["race"] = race
+    currentArtifact["currentFragments"], _, currentArtifact["requiredFragments"] = GetArtifactProgress()
+    currentArtifact["name"],_,_,_,_,currentArtifact["numSockets"],_ = GetSelectedArtifactInfo()
+    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: You now have "..currentArtifact["currentFragments"].."/"..currentArtifact["requiredFragments"].." "..currentArtifact["race"].." fragments.") end
+end
+
+function solveAlert()
+    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: solveAlert()") end
+    if CanSolveArtifact() == 1 and archaeologyRaces[currentArtifact["race"]][1] then
+		message = strconcat("You can now solve the ",currentArtifact["race"]," artifact!")
+		archaeologyRaces[currentArtifact["race"]][1] = false
+		alert(message)
+	elseif CanSolveArtifact() ~= 1 then
+        if currentArtifact["numSockets"] > 0 and archaeologyRaces[currentArtifact["race"]][2] > 0 then
+            keystoneHelp = math.min(currentArtifact["numSockets"], archaeologyRaces[currentArtifact["race"]][2])*KEYSTONE_VALUE
+            if keystoneHelp+currentArtifact["currentFragments"] >= currentArtifact["requiredFragments"] 
+                    and archaeologyRaces[currentArtifact["race"]][1] then
+                message = strconcat("You can now solve the ",currentArtifact["race"]," artifact with keystones!")
+                archaeologyRaces[currentArtifact["race"]][1] = false
+                alert(message)
+            end
+        else
+            archaeologyRaces[currentArtifact["race"]][1] = true
+        end
+	end
+end
+
+function updateSocketInfo()
+    for race in pairs(keystones) do
+        --if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: setting socket counts for ",race,": ",GetItemCount(keystones[race])) end
+        archaeologyRaces[race][2] = GetItemCount(keystones[race])  
+    end
 end
 
 function unearthedEvents:CHAT_MSG_CURRENCY(...)
@@ -73,23 +134,24 @@ function unearthedEvents:CHAT_MSG_CURRENCY(...)
 	if string.find(lootMsg,PROFESSIONS_ARCHAEOLOGY) == nil then return end
     if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: Archaeology loot message found.") end
     
-	currentArtifact["race"], currentArtifact["lootedFragments"] = string.match(lootMsg, "h%[(.-) Archaeology Fragment.*x(%d+).*")
-    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: Found "..currentArtifact["race"].." x"..currentArtifact["lootedFragments"]) end
+	race, currentArtifact["lootedFragments"] = string.match(lootMsg, "h%[(.-) Archaeology Fragment.*x(%d+).*")
+    if race == nil then return end 
+    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: Found "..race.." x"..currentArtifact["lootedFragments"]) end
     
-    if currentArtifact["race"] == nil then return end -- For when we get the tablets/scrolls/etc
-	local name, texture, itemID, currentTotal = GetArchaeologyRaceInfo(archaeologyRaces[currentArtifact["race"]][0])
+	updateCurrentArtifactInfo(race)
     
-    if (currentTotal/200) > .90 then alert("You have "..currentTotal.." of 200 maximum "..name.." fragments") end
-	SetSelectedArtifact(archaeologyRaces[currentArtifact["race"]][0])
-	currentArtifact["currentFragments"], currentArtifact["adjustment"], currentArtifact["requiredFragments"] = GetArtifactProgress()
-	if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: You now have "..currentTotal.."/"..currentArtifact["requiredFragments"].." "..name.." fragments.") end
-    if CanSolveArtifact() == 1 and archaeologyRaces[currentArtifact["race"]][1] then
-		message = strconcat("You can now solve the ",currentArtifact["race"]," artifact!")
-		archaeologyRaces[currentArtifact["race"]][1] = false
-		alert(message)
-	elseif CanSolveArtifact() ~= 1 then
-        archaeologyRaces[currentArtifact["race"]][1] = true
-	end
+    --Warning for approaching maximum fragments
+    --This will warn EVERY TIME the user is over the warning threshold
+    if (currentArtifact["requiredFragments"]/200) > .90 then alert("You have "..currentArtifact["requiredFragments"].." of 200 maximum "..name.." fragments") end
+    
+    --Alert that the user is now able to solve the project
+    solveAlert()
+end
+
+function unearthedEvents:BAG_UPDATE(...)
+    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: BAG_UPDATE") end
+    updateSocketInfo()
+    solveAlert()
 end
 
 function unearthedEvents:ARTIFACT_DIG_SITE_UPDATED(...)
