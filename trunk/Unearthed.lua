@@ -14,12 +14,14 @@ unearthedEvents = {
     ["ARTIFACT_DIG_SITE_UPDATED"] = "",
     ["CHAT_MSG_CURRENCY"] = "",
     ["PLAYER_ALIVE"] = "",
-    ["BAG_UPDATE"] = "",  -- Registered after the player is loaded in PLAYER_ALIVE
+    ["BAG_UPDATE"] = "",
+    ["ARTIFACT_COMPLETE"] = "",
 }
+local PLAYER_IS_LOADED = false
 
 --KeystoneItemID = RaceName
 local KEYSTONE_VALUE = 12
-keystones = {
+local keystones = {
     ["Dwarf"] = 52843,
     ["Draenei"] = 64394,
     ["Night Elf"] = 63127,
@@ -30,24 +32,27 @@ keystones = {
     ["Vrykul"] = 64395,
 }
 
---Set in updateCurrentArtifactInfo
-currentArtifact = {
-	["race"] = "",
-    ["name"] = "", --unused
-	["lootedFragments"] = "",
-	["currentFragments"] = "",
-    ["numSockets"] = "",
-	["requiredFragments"] = "",
-}
+--The race for the currently working on artifact
+currentRace = nil
 
 --Set on login/load (PLAYER_LOGIN)
--- RaceName = {RaceID, ShowCompletionAlert, NumKeystonesInInventory}
-archaeologyRaces = {}
+-- A table of projects with the race name string as the key
+-- raceName = {
+--      raceID, 
+--      name (current artifact name. Unused and unset),
+--      currentFragments,
+--      requiredFragments,
+--      numKeystones (available in inventory), 
+--      numSockets (for the keystones), 
+--      showCompletionAlert, 
+--      showKeystoneAlert }
+archaeologyProjects = {}
+bag_update_count = 0
 
 local UnearthedEventFrame = CreateFrame("Frame", "UnearthedEventFrame", UIParent)
 
 for event, handler in pairs(unearthedEvents) do
-	UnearthedEventFrame:RegisterEvent(event)
+    UnearthedEventFrame:RegisterEvent(event)
 end
 
 local function alert(message)
@@ -60,69 +65,72 @@ function unearthedEvents:ADDON_LOADED(...)
 	if addonName == ADDONNAME then
 		VERSION = GetAddOnMetadata("Unearthed", "Version")
 		print ("Unearthed", VERSION, "loaded")
-		updateArchaeologyRaces()
-        updateSocketInfo()
+		ue_updateArchaeologyProjects()
 	end
 end
 
 function unearthedEvents:PLAYER_ALIVE(...)
-	if  # archaeologyRaces == 0 then
-	    updateArchaeologyRaces()
-        --Registering this after we load to prevent a lot of initial calls to this.
-        UnearthedEventFrame:RegisterEvent("BAG_UPDATE")
-        --Then we force call this funtion once to do our initial load.
-        updateSocketInfo()
-        --I think this needs to be at the end of the function or we stop executing early?
-		UnearthedEventFrame:UnregisterEvent("PLAYER_ALIVE")
+	if  # archaeologyProjects == 0 then
+        ue_updateArchaeologyProjects()
 	end	
+    ue_updateKeystoneCount()
+    PLAYER_IS_LOADED = true
+    UnearthedEventFrame:UnregisterEvent("PLAYER_ALIVE")
 end
 
-function updateArchaeologyRaces()
+function ue_updateArchaeologyProjects()
     local numRaces = GetNumArchaeologyRaces()
     for i=1,numRaces do
-        local name, texture, itemID, currency = GetArchaeologyRaceInfo(i)
-        archaeologyRaces[name] = {}
-        archaeologyRaces[name][0] = i
-        if archaeologyRaces[name][1] == nil then archaeologyRaces[name][1] = true end
-        archaeologyRaces[name][2] = 0 --Default for categories (like Fossils) which never have keystones
+        local raceName, texture, itemID, currency = GetArchaeologyRaceInfo(i)
+        archaeologyProjects[raceName] = {}
+        archaeologyProjects[raceName]["raceID"] = i
+        if archaeologyProjects[raceName]["currentFragments"] == nil then
+            ue_updateCurrentProjectInfo(raceName)
+        end
+        if archaeologyProjects[raceName]["showCompletionAlert"] == nil then archaeologyProjects[raceName]["showCompletionAlert"] = true end
+        if archaeologyProjects[raceName]["showKeystoneAlert"] == nil then archaeologyProjects[raceName]["showKeystoneAlert"] = true end
     end
 end
 
-function updateCurrentArtifactInfo(race)
-    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: updateCurrentArtifactInfo()") end
-    SetSelectedArtifact(archaeologyRaces[race][0])
-    currentArtifact["race"] = race
-    currentArtifact["currentFragments"], _, currentArtifact["requiredFragments"] = GetArtifactProgress()
-    currentArtifact["name"],_,_,_,_,currentArtifact["numSockets"],_ = GetSelectedArtifactInfo()
-    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: You now have "..currentArtifact["currentFragments"].."/"..currentArtifact["requiredFragments"].." "..currentArtifact["race"].." fragments.") end
+function ue_updateCurrentProjectInfo(race)
+    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: ue_updateCurrentProjectInfo()") end
+    currentProject = archaeologyProjects[race]
+    SetSelectedArtifact(currentProject["raceID"])
+    currentProject["currentFragments"], _, currentProject["requiredFragments"] = GetArtifactProgress()
+    currentProject["name"],_,_,_,_,currentProject["numSockets"],_ = GetSelectedArtifactInfo()
+    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: You now have "..currentProject["currentFragments"].."/"..currentProject["requiredFragments"].." "..race.." fragments.") end
 end
 
-function solveAlert()
-    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: solveAlert()") end
-
-    if CanSolveArtifact() == 1 and archaeologyRaces[currentArtifact["race"]][1] then
-		message = strconcat("You can now solve the ",currentArtifact["race"]," artifact!")
-		archaeologyRaces[currentArtifact["race"]][1] = false
+function ue_solveAlert()
+    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: ue_solveAlert()") end
+    if currentRace == nil then return end
+    currentProject = archaeologyProjects[currentRace]
+    
+    if CanSolveArtifact() == 1 and currentProject["showCompletionAlert"] then
+		message = strconcat("You can now solve the ",currentRace," artifact!")
+		currentProject["showCompletionAlert"] = false
 		alert(message)
 	elseif CanSolveArtifact() ~= 1 then
-        if currentArtifact["numSockets"] > 0 and archaeologyRaces[currentArtifact["race"]][2] > 0 then
-            keystoneHelp = math.min(currentArtifact["numSockets"], archaeologyRaces[currentArtifact["race"]][2])*KEYSTONE_VALUE
-            if keystoneHelp+currentArtifact["currentFragments"] >= currentArtifact["requiredFragments"] 
-                    and archaeologyRaces[currentArtifact["race"]][1] then
-                message = strconcat("You can now solve the ",currentArtifact["race"]," artifact with keystones!")
-                archaeologyRaces[currentArtifact["race"]][1] = false
+        if currentProject["numSockets"] > 0 and currentProject["numKeystones"] > 0 then
+            if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: Keystones and sockets found. Checking if we have enough.") end
+            keystoneHelp = math.min(currentProject["numSockets"], currentProject["numKeystones"])*KEYSTONE_VALUE
+            if keystoneHelp+currentProject["currentFragments"] >= currentProject["requiredFragments"] and currentProject["showKeystoneAlert"] then
+                message = strconcat("You can now solve the ",currentRace," artifact with keystones!")
+                currentProject["showKeystoneAlert"] = false
                 alert(message)
             end
         else
-            archaeologyRaces[currentArtifact["race"]][1] = true
+            --No longer solvable, so let's reset it
+            currentProject["showCompletionAlert"] = true
+            currentProject["showKeystoneAlert"] = true
         end
 	end
 end
 
-function updateSocketInfo()
-    for race in pairs(keystones) do
-        --if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: setting socket counts for ",race,": ",GetItemCount(keystones[race])) end
-        archaeologyRaces[race][2] = GetItemCount(keystones[race])  
+function ue_updateKeystoneCount()
+    for race,itemID in pairs(keystones) do
+        if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: setting keystone counts for ",race,": ",GetItemCount(itemID)) end
+        archaeologyProjects[race]["numKeystones"] = GetItemCount(itemID)  
     end
 end
 
@@ -135,27 +143,38 @@ function unearthedEvents:CHAT_MSG_CURRENCY(...)
 	if string.find(lootMsg,PROFESSIONS_ARCHAEOLOGY) == nil then return end
     if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: Archaeology loot message found.") end
     
-	race, currentArtifact["lootedFragments"] = string.match(lootMsg, "h%[(.-) Archaeology Fragment.*x(%d+).*")
-    if race == nil then return end 
-    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: Found "..race.." x"..currentArtifact["lootedFragments"]) end
+	currentRace, lootedFragments = string.match(lootMsg, "h%[(.-) Archaeology Fragment.*x(%d+).*")
+    if currentRace == nil then return end 
+    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: Found "..currentRace.." x"..lootedFragments) end
     
-	updateCurrentArtifactInfo(race)
+	ue_updateCurrentProjectInfo(currentRace)
     
     --Warning for approaching maximum fragments
     --This will warn EVERY TIME the user is over the warning threshold
-    if (currentArtifact["requiredFragments"]/200) > .90 then alert("You have "..currentArtifact["requiredFragments"].." of 200 maximum "..name.." fragments") end
+    if (archaeologyProjects[currentRace]["requiredFragments"]/200) > .90 then alert("You have "..archaeologyProjects[currentRace]["requiredFragments"].." of 200 maximum "..name.." fragments") end
     
     --Alert that the user is now able to solve the project
-    solveAlert()
+    if currentRace ~= nil then
+        ue_solveAlert()
+    end
 end
 
 function unearthedEvents:BAG_UPDATE(...)
     if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: BAG_UPDATE") end
-    updateSocketInfo()
-    --Make sure we've actually got an artifact to check for before we start alerting
-    --We will only alert if we are doing Archaeology in the field and only for the current race
-    if currentArtifact["race"] ~= nil then
-        solveAlert()
+    if not PLAYER_IS_LOADED then return end --Make sure we don't run all our logic before we care.
+    ue_updateKeystoneCount()
+    --Make sure we've actually got an project to check before we start alerting
+    --We will only alert if we are doing Archaeology in the field and only for the current project
+    if currentRace ~= nil then
+        ue_solveAlert()
+    end
+end
+
+function unearthedEvents:ARTIFACT_COMPLETE(...)
+    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: ARTIFACT_COMPLETE") end
+    if currentRace ~= nil then
+        ue_updateCurrentProjectInfo(currentRace)
+        ue_solveAlert()
     end
 end
 
