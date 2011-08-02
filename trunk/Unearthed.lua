@@ -47,7 +47,6 @@ currentRace = nil
 --      showCompletionAlert, 
 --      showKeystoneAlert }
 archaeologyProjects = {}
-bag_update_count = 0
 
 local UnearthedEventFrame = CreateFrame("Frame", "UnearthedEventFrame", UIParent)
 
