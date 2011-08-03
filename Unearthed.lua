@@ -113,16 +113,23 @@ function ue_solveAlert()
         if currentProject["numSockets"] > 0 and currentProject["numKeystones"] > 0 then
             if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: Keystones and sockets found. Checking if we have enough.") end
             keystoneHelp = math.min(currentProject["numSockets"], currentProject["numKeystones"])*KEYSTONE_VALUE
-            if keystoneHelp+currentProject["currentFragments"] >= currentProject["requiredFragments"] and currentProject["showKeystoneAlert"] then
-                message = strconcat("You can now solve the ",currentRace," artifact with keystones!")
-                currentProject["showKeystoneAlert"] = false
-                alert(message)
+            if keystoneHelp+currentProject["currentFragments"] >= currentProject["requiredFragments"] then
+                if currentProject["showKeystoneAlert"] then
+                    message = strconcat("You can now solve the ",currentRace," artifact with keystones!")
+                    currentProject["showKeystoneAlert"] = false
+                    alert(message)
+                end
+                else
+                    --No longer solvable, so let's reset it
+                    currentProject["showCompletionAlert"] = true
+                    currentProject["showKeystoneAlert"] = true
+            else
+                --No longer solvable, so let's reset it
+                currentProject["showCompletionAlert"] = true
+                currentProject["showKeystoneAlert"] = true
             end
-        else
-            --No longer solvable, so let's reset it
-            currentProject["showCompletionAlert"] = true
-            currentProject["showKeystoneAlert"] = true
         end
+    else
 	end
 end
 
@@ -174,6 +181,8 @@ function unearthedEvents:ARTIFACT_COMPLETE(...)
     if currentRace ~= nil then
         ue_updateCurrentProjectInfo(currentRace)
         ue_solveAlert()
+        currentProject["showCompletionAlert"] = true
+        currentProject["showKeystoneAlert"] = true
     end
 end
 
