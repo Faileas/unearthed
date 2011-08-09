@@ -17,7 +17,7 @@ unearthedEvents = {
     ["BAG_UPDATE"] = "",
     ["ARTIFACT_COMPLETE"] = "",
 }
-local PLAYER_IS_LOADED = false
+PLAYER_IS_LOADED = false
 
 --KeystoneItemID = RaceName
 local KEYSTONE_VALUE = 12
@@ -74,7 +74,6 @@ function unearthedEvents:PLAYER_ALIVE(...)
 	end	
     ue_updateKeystoneCount()
     PLAYER_IS_LOADED = true
-    UnearthedEventFrame:UnregisterEvent("PLAYER_ALIVE")
 end
 
 function ue_updateArchaeologyProjects()
@@ -118,18 +117,17 @@ function ue_solveAlert()
                     message = strconcat("You can now solve the ",currentRace," artifact with keystones!")
                     currentProject["showKeystoneAlert"] = false
                     alert(message)
-                end
                 else
                     --No longer solvable, so let's reset it
                     currentProject["showCompletionAlert"] = true
                     currentProject["showKeystoneAlert"] = true
+                end
             else
                 --No longer solvable, so let's reset it
                 currentProject["showCompletionAlert"] = true
                 currentProject["showKeystoneAlert"] = true
             end
         end
-    else
 	end
 end
 
