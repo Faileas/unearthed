@@ -155,7 +155,7 @@ function unearthedEvents:CHAT_MSG_CURRENCY(...)
     
     --Warning for approaching maximum fragments
     --This will warn EVERY TIME the user is over the warning threshold
-    if (archaeologyProjects[currentRace]["currentFragments"]/200) > .90 then alert("You have "..archaeologyProjects[currentRace]["currentFragments"].." of 200 maximum "..name.." fragments") end
+    if (archaeologyProjects[currentRace]["currentFragments"]/200) > .90 then alert("You have "..archaeologyProjects[currentRace]["currentFragments"].." of 200 maximum "..currentRace.." fragments") end
     
     --Alert that the user is now able to solve the project
     if currentRace ~= nil then
