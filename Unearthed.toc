@@ -1,4 +1,4 @@
-## Interface: 40200
+## Interface: 40300
 ## Title: Unearthed
 ## Notes: Archaeology helper
 ## Author: Syrae and GovtGeek
