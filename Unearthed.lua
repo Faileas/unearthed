@@ -7,6 +7,7 @@ Special thanks to the folks in #wowuidev
 -- This will be set once when the addon is first loaded (ADDON_LOADED) and then never set after that.
 local VERSION = nil
 local ADDONNAME = "Unearthed"
+local REVISION = tonumber(strmatch("$Revision: 20 $", "%d+"))
 UNEARTHED_DEBUG = false
 
 unearthedEvents = {
@@ -17,7 +18,7 @@ unearthedEvents = {
     ["BAG_UPDATE"] = "",
     ["ARTIFACT_COMPLETE"] = "",
 }
-PLAYER_IS_LOADED = false
+local PLAYER_IS_LOADED = false
 
 --KeystoneItemID = RaceName
 local KEYSTONE_VALUE = 12
@@ -33,20 +34,20 @@ local keystones = {
 }
 
 --The race for the currently working on artifact
-currentRace = nil
+ue_currentRace = nil
 
 --Set on login/load (PLAYER_LOGIN)
 -- A table of projects with the race name string as the key
 -- raceName = {
 --      raceID, 
---      name (current artifact name. Unused and unset),
+--      artifactName,
 --      currentFragments,
 --      requiredFragments,
 --      numKeystones (available in inventory), 
 --      numSockets (for the keystones), 
 --      showCompletionAlert, 
 --      showKeystoneAlert }
-archaeologyProjects = {}
+local archaeologyProjects = {}
 
 local UnearthedEventFrame = CreateFrame("Frame", "UnearthedEventFrame", UIParent)
 
@@ -69,6 +70,7 @@ function unearthedEvents:ADDON_LOADED(...)
 end
 
 function unearthedEvents:PLAYER_ALIVE(...)
+    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: PLAYER_ALIVE") end
 	if  # archaeologyProjects == 0 then
         ue_updateArchaeologyProjects()
 	end	
@@ -79,42 +81,108 @@ end
 function ue_updateArchaeologyProjects()
     local numRaces = GetNumArchaeologyRaces()
     for i=1,numRaces do
-        local raceName, texture, itemID, currency = GetArchaeologyRaceInfo(i)
-        archaeologyProjects[raceName] = {}
+        local raceName, _, _, currency, requiredFragments = GetArchaeologyRaceInfo(i)
+        -- Table is itself if not nil, otherwise construct it
+        archaeologyProjects[raceName] = archaeologyProjects[raceName] or {}
         archaeologyProjects[raceName]["raceID"] = i
-        if archaeologyProjects[raceName]["currentFragments"] == nil then
-            ue_updateCurrentProjectInfo(raceName)
-        end
+        archaeologyProjects[raceName]["currentFragments"] = currency
+        archaeologyProjects[raceName]["requiredFragments"] = requiredFragments
+        local artifactName, _, _, _, _, numKeystones, _ = GetActiveArtifactByRace(i)
+        archaeologyProjects[raceName]["artifactName"] = artifactName
+        archaeologyProjects[raceName]["numSockets"] = numKeystones
+        if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: You now have "..archaeologyProjects[raceName]["currentFragments"].."/"..archaeologyProjects[raceName]["requiredFragments"].." "..raceName.." fragments.") end
         if archaeologyProjects[raceName]["showCompletionAlert"] == nil then archaeologyProjects[raceName]["showCompletionAlert"] = true end
-        if archaeologyProjects[raceName]["showKeystoneAlert"] == nil then archaeologyProjects[raceName]["showKeystoneAlert"] = true end
+        if archaeologyProjects[raceName]["showKeystoneAlert"] == nil then archaeologyProjects[raceName]["showKeystoneAlert"] = true end 
     end
 end
 
+function ue_updateArchaeologyProject(raceName)
+        local raceName, _, _, currency, requiredFragments = GetArchaeologyRaceInfo(i)
+        -- Table is itself if not nil, otherwise construct it
+        archaeologyProjects[raceName] = archaeologyProjects[raceName] or {}
+        archaeologyProjects[raceName]["raceID"] = i
+        archaeologyProjects[raceName]["currentFragments"] = currency
+        archaeologyProjects[raceName]["requiredFragments"] = requiredFragments
+        local artifactName, _, _, _, _, numKeystones, _ = GetActiveArtifactByRace(i)
+        archaeologyProjects[raceName]["artifactName"] = artifactName
+        archaeologyProjects[raceName]["numSockets"] = numKeystones
+        if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: You now have "..archaeologyProjects[raceName]["currentFragments"].."/"..archaeologyProjects[raceName]["requiredFragments"].." "..raceName.." fragments.") end
+        if archaeologyProjects[raceName]["showCompletionAlert"] == nil then archaeologyProjects[raceName]["showCompletionAlert"] = true end
+        if archaeologyProjects[raceName]["showKeystoneAlert"] == nil then archaeologyProjects[raceName]["showKeystoneAlert"] = true end 
+end
+
+-- Deprecated
 function ue_updateCurrentProjectInfo(race)
     if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: ue_updateCurrentProjectInfo()") end
     currentProject = archaeologyProjects[race]
-    SetSelectedArtifact(currentProject["raceID"])
+    --SetSelectedArtifact(currentProject["raceID"])
     currentProject["currentFragments"], _, currentProject["requiredFragments"] = GetArtifactProgress()
-    currentProject["name"],_,_,_,_,currentProject["numSockets"],_ = GetSelectedArtifactInfo()
+    currentProject["artifactName"],_,_,_,_,currentProject["numSockets"],_ = GetSelectedArtifactInfo()
     if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: You now have "..currentProject["currentFragments"].."/"..currentProject["requiredFragments"].." "..race.." fragments.") end
 end
 
-function ue_solveAlert()
-    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: ue_solveAlert()") end
-    if currentRace == nil then return end
-    currentProject = archaeologyProjects[currentRace]
+-- Make best effort to store current selected artifact and revert to that when we're done
+function ue_canSolveArtifact(race)
+    ue_SelectedArtifact, _, _, _, _, _, _, _, _ = GetSelectedArtifactInfo()
     
-    if CanSolveArtifact() == 1 and currentProject["showCompletionAlert"] then
-		message = strconcat("You can now solve the ",currentRace," artifact!")
+    -- If we have nothing to revert to, then we can just quickly check do our stuff and leave the function
+    if ue_SelectedArtifact == nil then
+        if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: No currently selected artifact") end
+        SetSelectedArtifact(archaeologyProjects[race]["raceID"])
+        return CanSolveArtifact()
+    end
+    
+    local selectedRaceID = nil
+    for race in pairs(archaeologyProjects) do
+        if archaeologyProjects[race]["artifactName"] == ue_SelectedArtifact then 
+            selectedRaceID = archaeologyProjects[race]["raceID"]
+            if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: Currently selected artifact is the "..race.." artifact.") end
+        end
+    end
+    
+    -- If we couldn't find the current artifact, update our info and try again
+    if selectedRaceID == nil then
+        ue_updateArchaeologyProjects()
+        for race in pairs(archaeologyProjects) do
+            if archaeologyProjects[race]["artifactName"] == ue_SelectedArtifact then 
+                selectedRaceID = archaeologyProjects[race]["raceID"]
+                if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: Currently selected artifact is the "..race.." artifact.") end
+            end
+        end
+    end
+    
+    -- If we still can't find it, then don't try to figure out if it's solvable
+    if selectedRaceID == nil then
+        if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: Could not find a match for the currently selected artifact: "..ue_SelectedArtifact) end
+        return false
+    else
+        SetSelectedArtifact(archaeologyProjects[race]["raceID"])
+        isSolvable = CanSolveArtifact()
+        SetSelectedArtifact(selectedRaceID)
+    end
+    return isSolvable
+end
+
+function ue_solveAlert()
+    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: ue_solveAlert() for "..ue_currentRace) end
+    if ue_currentRace == nil then return end
+    local currentProject = archaeologyProjects[ue_currentRace]
+    
+    isSolvable = ue_canSolveArtifact(ue_currentRace)
+    
+    if isSolvable == 1 and currentProject["showCompletionAlert"] then
+		message = strconcat("You can now solve the ",ue_currentRace," artifact!")
+        if UNEARTHED_DEBUG then print (strconcat("You can now solve the ",ue_currentRace," artifact!")) end
 		currentProject["showCompletionAlert"] = false
 		alert(message)
-	elseif CanSolveArtifact() ~= 1 then
+	elseif isSolvable ~= 1 then
         if currentProject["numSockets"] > 0 and currentProject["numKeystones"] > 0 then
             if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: Keystones and sockets found. Checking if we have enough.") end
             keystoneHelp = math.min(currentProject["numSockets"], currentProject["numKeystones"])*KEYSTONE_VALUE
             if keystoneHelp+currentProject["currentFragments"] >= currentProject["requiredFragments"] then
                 if currentProject["showKeystoneAlert"] then
-                    message = strconcat("You can now solve the ",currentRace," artifact with keystones!")
+                    message = strconcat("You can now solve the ",ue_currentRace," artifact with keystones!")
+                    if UNEARTHED_DEBUG then print (strconcat("UNEARTHED_DEBUG: You can now solve the ",ue_currentRace," artifact with keystones!")) end
                     currentProject["showKeystoneAlert"] = false
                     alert(message)
                 else
@@ -132,7 +200,7 @@ function ue_solveAlert()
 end
 
 function ue_updateKeystoneCount()
-    for race,itemID in pairs(keystones) do
+    for race, itemID in pairs(keystones) do
         if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: setting keystone counts for ",race,": ",GetItemCount(itemID)) end
         archaeologyProjects[race]["numKeystones"] = GetItemCount(itemID)  
     end
@@ -147,18 +215,18 @@ function unearthedEvents:CHAT_MSG_CURRENCY(...)
 	if string.find(lootMsg,PROFESSIONS_ARCHAEOLOGY) == nil then return end
     if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: Archaeology loot message found.") end
     
-	currentRace, lootedFragments = string.match(lootMsg, "h%[(.-) Archaeology Fragment.*x(%d+).*")
-    if currentRace == nil then return end 
-    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: Found "..currentRace.." x"..lootedFragments) end
+	ue_currentRace, lootedFragments = string.match(lootMsg, "h%[(.-) Archaeology Fragment.*x(%d+).*")
+    if ue_currentRace == nil then return end 
+    if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: Found "..ue_currentRace.." x"..lootedFragments) end
     
-	ue_updateCurrentProjectInfo(currentRace)
+	ue_updateArchaeologyProjects()
     
     --Warning for approaching maximum fragments
     --This will warn EVERY TIME the user is over the warning threshold
-    if (archaeologyProjects[currentRace]["currentFragments"]/200) > .90 then alert("You have "..archaeologyProjects[currentRace]["currentFragments"].." of 200 maximum "..currentRace.." fragments") end
+    if (archaeologyProjects[ue_currentRace]["currentFragments"]/200) > .90 then alert("You have "..archaeologyProjects[ue_currentRace]["currentFragments"].." of 200 maximum "..ue_currentRace.." fragments") end
     
     --Alert that the user is now able to solve the project
-    if currentRace ~= nil then
+    if ue_currentRace ~= nil then
         ue_solveAlert()
     end
 end
@@ -169,18 +237,18 @@ function unearthedEvents:BAG_UPDATE(...)
     ue_updateKeystoneCount()
     --Make sure we've actually got an project to check before we start alerting
     --We will only alert if we are doing Archaeology in the field and only for the current project
-    if currentRace ~= nil then
+    if ue_currentRace ~= nil then
         ue_solveAlert()
     end
 end
 
 function unearthedEvents:ARTIFACT_COMPLETE(...)
     if UNEARTHED_DEBUG then print ("UNEARTHED_DEBUG: ARTIFACT_COMPLETE") end
-    if currentRace ~= nil then
-        ue_updateCurrentProjectInfo(currentRace)
+    if ue_currentRace ~= nil then
+        ue_updateArchaeologyProjects()
         ue_solveAlert()
-        currentProject["showCompletionAlert"] = true
-        currentProject["showKeystoneAlert"] = true
+        archaeologyProjects[ue_currentRace]["showCompletionAlert"] = true
+        archaeologyProjects[ue_currentRace]["showKeystoneAlert"] = true
     end
 end
 
