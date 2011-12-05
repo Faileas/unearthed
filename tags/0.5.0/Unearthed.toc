@@ -1,0 +1,12 @@
+## Interface: 40300
+## Title: Unearthed
+## Notes: Archaeology helper
+## Author: Syrae and GovtGeek
+## SavedVariablesPerCharacter: UnearthedSettings
+## Version: 0.5.0
+## DefaultState: Enabled
+## LoadOnDemand: 0
+## X-eMail: syrae +dot+ dev -at- gmail |dot| com
+## X-Category: Tradeskill
+## X-Website: http://code.google.com/p/unearthed/
+Unearthed.lua
